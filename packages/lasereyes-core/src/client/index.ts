@@ -1,5 +1,5 @@
+// Import necessary dependencies and types
 import { MapStore, WritableAtom, subscribeKeys } from 'nanostores'
-
 import { Config, NetworkType, ProviderType } from '../types'
 import {
   LEATHER,
@@ -30,15 +30,26 @@ import MagicEdenProvider from './providers/magic-eden'
 import PhantomProvider from './providers/phantom'
 import OpNetProvider from './providers/op-net'
 
+/**
+ * Main client class for LaserEyes functionality
+ */
 export class LaserEyesClient {
   readonly $store: MapStore<LaserEyesStoreType>
   readonly $network: WritableAtom<NetworkType>
   readonly $providerMap: Partial<Record<ProviderType, WalletProvider>>
 
+  /**
+   * Cleanup method to dispose of all providers
+   */
   dispose() {
     Object.values(this.$providerMap).forEach((provider) => provider?.dispose())
   }
 
+  /**
+   * Constructor for LaserEyesClient
+   * @param stores - Object containing store and network atoms
+   * @param config - Optional configuration object
+   */
   constructor(
     stores: {
       readonly $store: MapStore<LaserEyesStoreType>
@@ -48,6 +59,8 @@ export class LaserEyesClient {
   ) {
     this.$store = stores.$store
     this.$network = stores.$network
+
+    // Initialize wallet providers
     this.$providerMap = {
       [LEATHER]: new LeatherProvider(stores, this, config),
       [MAGIC_EDEN]: new MagicEdenProvider(stores, this, config),
@@ -60,11 +73,16 @@ export class LaserEyesClient {
       [XVERSE]: new XVerseProvider(stores, this, config),
       [WIZZ]: new WizzProvider(stores, this, config),
     }
+
+    // Set up network change watcher
     this.$network.subscribe(this.watchNetworkChange.bind(this))
+
+    // Set up initialization state watcher
     subscribeKeys(this.$store, ['isInitializing'], (v) =>
       this.handleIsInitializingChanged(v.isInitializing)
     )
 
+    // Handle network configuration if provided
     if (config && config.network) {
       this.$network.set(config.network)
       this.getNetwork().then((foundNetwork) => {
@@ -78,16 +96,21 @@ export class LaserEyesClient {
       })
     }
 
+    // Set up provider availability watcher
     subscribeKeys(
       this.$store,
       ['hasProvider'],
       this.checkInitializationComplete.bind(this)
     )
 
-    // Hack to trigger check for wallet providers
+    // Trigger DOM shake hack to check for wallet providers
     triggerDOMShakeHack()
   }
 
+  /**
+   * Handle changes in initialization state
+   * @param value - Boolean indicating if initializing
+   */
   private handleIsInitializingChanged(value: boolean) {
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
       if (!value) {
@@ -102,6 +125,10 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Connect to a wallet provider
+   * @param defaultWallet - The wallet provider to connect to
+   */
   async connect(defaultWallet: ProviderType) {
     this.$store.setKey('isConnecting', true)
     try {
@@ -122,6 +149,9 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Request accounts from the connected wallet
+   */
   async requestAccounts() {
     if (!this.$store.get().provider) {
       throw new Error('No wallet provider connected')
@@ -145,6 +175,9 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Disconnect the current wallet
+   */
   disconnect() {
     this.$store.setKey('connected', false)
     this.$store.setKey('provider', undefined)
@@ -157,6 +190,10 @@ export class LaserEyesClient {
     localStorage?.removeItem(LOCAL_STORAGE_DEFAULT_WALLET)
   }
 
+  /**
+   * Switch to a different network
+   * @param network - The network to switch to
+   */
   switchNetwork(network: NetworkType) {
     try {
       if (this.$store.get().provider) {
@@ -175,6 +212,9 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Check if initialization is complete
+   */
   checkInitializationComplete() {
     if (
       Object.values(this.$store.get().hasProvider).every((e) => e !== undefined)
@@ -183,10 +223,16 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Watch for network changes
+   */
   private watchNetworkChange() {
     this.$store.setKey('balance', undefined)
   }
 
+  /**
+   * Get the current network
+   */
   async getNetwork() {
     if (
       this.$store.get().provider &&
@@ -198,6 +244,11 @@ export class LaserEyesClient {
     return this.$network.get()
   }
 
+  /**
+   * Send BTC to a specified address
+   * @param to - The recipient's address
+   * @param amount - The amount of BTC to send
+   */
   async sendBTC(to: string, amount: number) {
     if (amount <= 0) throw new Error('Amount must be greater than 0')
     if (!Number.isInteger(amount)) throw new Error('Amount must be an integer')
@@ -221,6 +272,11 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Sign a message
+   * @param message - The message to sign
+   * @param toSignAddress - Optional address to sign with
+   */
   async signMessage(message: string, toSignAddress?: string) {
     if (!this.$store.get().provider) return
     if (this.$providerMap[this.$store.get().provider!]) {
@@ -241,6 +297,12 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Sign a PSBT (Partially Signed Bitcoin Transaction)
+   * @param tx - The PSBT to sign
+   * @param finalize - Whether to finalize the PSBT
+   * @param broadcast - Whether to broadcast the transaction
+   */
   async signPsbt(tx: string, finalize = false, broadcast = false) {
     let psbtHex, psbtBase64
 
@@ -275,11 +337,14 @@ export class LaserEyesClient {
         throw error
       }
     } else {
-      // !! Unsure
       throw new Error('No wallet provider connected')
     }
   }
 
+  /**
+   * Push a signed PSBT to the network
+   * @param tx - The signed PSBT to push
+   */
   async pushPsbt(tx: string) {
     if (!this.$store.get().provider) return
     if (this.$providerMap[this.$store.get().provider!]) {
@@ -300,6 +365,9 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Get the public key from the connected wallet
+   */
   async getPublicKey() {
     if (!this.$store.get().provider) return
     if (this.$providerMap[this.$store.get().provider!]) {
@@ -318,6 +386,9 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Get the balance from the connected wallet
+   */
   async getBalance() {
     if (!this.$store.get().provider) return
     if (this.$providerMap[this.$store.get().provider!]) {
@@ -337,6 +408,9 @@ export class LaserEyesClient {
     }
   }
 
+  /**
+   * Get inscriptions from the connected wallet
+   */
   async getInscriptions() {
     if (!this.$store.get().provider) return
     if (this.$providerMap[this.$store.get().provider!]) {
